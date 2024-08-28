@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resumable Upload Demo</title>
+</head>
+<body>
+    <input type="file" id="fileInput" />
+    <button id="uploadBtn">Upload</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="resumeBtn">Resume</button>
+    <div id="status"></div>
+
+    <script>
+        const CHUNK_SIZE = 1024 * 1024; // 1 MB
+        let fileInput = document.getElementById('fileInput');
+        let uploadBtn = document.getElementById('uploadBtn');
+        let pauseBtn = document.getElementById('pauseBtn');
+        let resumeBtn = document.getElementById('resumeBtn');
+        let status = document.getElementById('status');
+
+        let file;
+        let currentChunk = 0;
+        let isPaused = false;
+
+        uploadBtn.onclick = () => {
+            file = fileInput.files[0];
+            if (file) {
+                uploadFileChunk();
+            }
+        };
+
+        pauseBtn.onclick = () => {
+            isPaused = true;
+            status.textContent = 'Upload paused';
+        };
+
+        resumeBtn.onclick = () => {
+            if (isPaused) {
+                isPaused = false;
+                status.textContent = 'Resuming upload...';
+                uploadFileChunk();
+            }
+        };
+
+        function uploadFileChunk() {
+            if (isPaused || currentChunk >= file.size) return;
+
+            let chunk = file.slice(currentChunk, currentChunk + CHUNK_SIZE);
+            let formData = new FormData();
+            formData.append('file', chunk);
+            formData.append('fileName', file.name);
+            formData.append('start', currentChunk);
+
+            console.log(`Uploading chunk ${currentChunk} - ${currentChunk + CHUNK_SIZE}...`);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                if (response.ok) {
+                    currentChunk += CHUNK_SIZE;
+                    status.textContent = `Uploaded ${Math.min(currentChunk, file.size)} of ${file.size} bytes`;
+
+                    console.log(`Uploaded ${currentChunk} bytes\n`);
+                    
+                    if (currentChunk < file.size) {
+                        uploadFileChunk();  // Continue with the next chunk
+                    } else {
+                        status.textContent = 'Upload complete!';
+                    }
+                } else {
+                    status.textContent = 'Error uploading chunk. Retrying...';
+                }
+            }).catch(() => {
+                status.textContent = 'Error uploading chunk. Retrying...';
+            });
+        }
+    </script>
+</body>
+</html>
