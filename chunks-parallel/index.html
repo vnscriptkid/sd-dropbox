@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parallel Resumable Upload Demo</title>
+</head>
+<body>
+    <input type="file" id="fileInput" />
+    <button id="uploadBtn">Upload</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="resumeBtn">Resume</button>
+    <div id="status"></div>
+
+    <script>
+        const CHUNK_SIZE = 1024 * 1024; // 1 MB
+        const MAX_CONCURRENT_UPLOADS = 3; // Max number of parallel uploads
+        let fileInput = document.getElementById('fileInput');
+        let uploadBtn = document.getElementById('uploadBtn');
+        let pauseBtn = document.getElementById('pauseBtn');
+        let resumeBtn = document.getElementById('resumeBtn');
+        let status = document.getElementById('status');
+
+        let file;
+        let isPaused = false;
+        let uploadQueue = [];
+        let activeUploads = 0;
+        let uploadedBytes = 0;
+
+        uploadBtn.onclick = () => {
+            file = fileInput.files[0];
+            if (file) {
+                enqueueChunks();
+            }
+        };
+
+        pauseBtn.onclick = () => {
+            isPaused = true;
+            status.textContent = 'Upload paused';
+        };
+
+        resumeBtn.onclick = () => {
+            if (isPaused) {
+                isPaused = false;
+                status.textContent = 'Resuming upload...';
+                processUploadQueue();
+            }
+        };
+
+        function enqueueChunks() {
+            for (let start = 0; start < file.size; start += CHUNK_SIZE) {
+                uploadQueue.push(start);
+            }
+
+            console.log(`Enqueued ${uploadQueue.length} chunks: ${uploadQueue}`);
+            
+            processUploadQueue();
+        }
+
+        function processUploadQueue() {
+            while (activeUploads < MAX_CONCURRENT_UPLOADS && uploadQueue.length > 0 && !isPaused) {
+                const chunkStart = uploadQueue.shift();
+
+                console.log(`Uploading chunk ${chunkStart} - ${Math.min(chunkStart + CHUNK_SIZE, file.size)}...`);
+                
+                uploadFileChunk(chunkStart);
+            }
+
+            if (uploadQueue.length === 0 && activeUploads === 0) {
+                status.textContent = 'Upload complete';
+            }
+        }
+
+        function uploadFileChunk(start) {
+            activeUploads++; // Increment the count of active uploads
+
+            const chunk = file.slice(start, start + CHUNK_SIZE);
+            const formData = new FormData();
+            formData.append('file', chunk);
+            formData.append('fileName', file.name);
+            formData.append('start', start);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            }).then(response => {
+                activeUploads--; // Decrement the count when an upload completes
+
+                if (response.ok) {
+                    uploadedBytes += CHUNK_SIZE;
+                    status.textContent = `Bytes uploaded: ${uploadedBytes} / ${file.size}`;
+                } else {
+                    uploadQueue.push(start); // Re-enqueue chunk on failure
+                }
+                
+                if (!isPaused) {
+                    processUploadQueue(); // Continue processing uploads
+                }
+            }).catch(() => {
+                activeUploads--; // Decrement on error
+                uploadQueue.push(start); // Re-enqueue chunk on failure
+                
+                if (!isPaused) {
+                    processUploadQueue(); // Continue processing uploads
+                }
+            });
+        }
+    </script>
+</body>
+</html>
