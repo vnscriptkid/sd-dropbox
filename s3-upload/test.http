@@ -1,0 +1,9 @@
+### Start upload 12MB file
+POST http://localhost:8080/start-upload
+Content-Type: application/x-www-form-urlencoded
+
+fileSize=12582912
+&fileName=test.zip
+
+### Get signed URL for chunk upload
+GET http://localhost:8080/get-signed-url
