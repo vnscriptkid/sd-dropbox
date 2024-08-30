@@ -24,3 +24,31 @@
     - Check if all chunks are uploaded
         - If yes, update the `upload_metadata` entry with status = 'completed'
         - If no, return
+
+
+- 4. Sync upload API: `syncUpload(namespace, existingUploadMetadata[]): UploadMetadata[]`
+    - Find all latest files in `upload_metadata` group by (namespace, relativePath, fileName)
+```sql
+-- use `distinct on` in postgres and get latest entry based on version
+SELECT DISTINCT ON (namespace, relative_path, file_name) *
+FROM upload_metadata
+WHERE namespace = 'vnscriptkid'
+ORDER BY namespace, relative_path, file_name, version DESC;
+
+
+-- seed data
+INSERT INTO upload_metadata (namespace, relative_path, file_name, version, status, upload_id)
+VALUES ('vnscriptkid', '/parent', 'index.html', 1, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de1a'),
+        ('vnscriptkid', '/parent', 'names.txt', 1, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de1b'), -- << latest
+        ('vnscriptkid', '/parent/child', 'report.json', 1, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de1c'),
+        ('vnscriptkid', '/parent', 'index.html', 2, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de1d'),
+        ('vnscriptkid', '/parent/child', 'report.json', 2, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de1e'), -- << latest
+        ('vnscriptkid', '/parent', 'index.html', 3, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de1f'), -- << latest
+        ('randomuser', '/internal', 'cat.png', 1, 'completed', '5f58c81f-d9e2-48b9-8119-d65117e3de2a');
+```
+    - Loop through latest entries
+        - If entry is not in existingUploadMetadata[], add to return list (new upload)
+        - If entry is in existingUploadMetadata[], check if version is different
+            - If yes, add to return list
+            - If no, skip it
+    - Return the list of new uploads

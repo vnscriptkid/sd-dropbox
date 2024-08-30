@@ -85,6 +85,8 @@ func main() {
 	router.GET("/get-signed-url", getSignedURLHandler)
 	// Step 3
 	router.POST("/confirm-chunk", confirmChunkHandler)
+	// Step 4
+	router.POST("/sync-upload", syncUploadHandler)
 
 	fmt.Println("Server started at :8080")
 	router.Run(":8080")
@@ -232,4 +234,64 @@ func confirmChunkHandler(c *gin.Context) {
 	}
 
 	c.String(http.StatusOK, "Chunk confirmed")
+}
+
+func syncUploadHandler(c *gin.Context) {
+	namespace := c.PostForm("namespace")
+
+	// Client will send data versions that are currently in the client
+	clientUploadMetadata := []UploadMetadata{}
+
+	latestUploadMetadata := []UploadMetadata{}
+
+	db.Raw(`
+		SELECT DISTINCT ON (namespace, relative_path, file_name) upload_id
+		FROM upload_metadata
+		WHERE namespace = ?
+		ORDER BY namespace, relative_path, file_name, version DESC
+	`, namespace).Scan(&latestUploadMetadata)
+
+	toAdd := []UploadMetadata{}
+	toUpdate := []UploadMetadata{}
+	toDelete := []UploadMetadata{}
+
+	// Loop through latest entries
+	for _, entry := range latestUploadMetadata {
+		// Case 1: entry is not in clientUploadMetadata
+		if !containsUploadMetadata(clientUploadMetadata, entry) {
+			toAdd = append(toAdd, entry)
+			continue
+		}
+		// Case 2: entry is in clientUploadMetadata but lower version
+		clientEntry := getUploadMetadata(clientUploadMetadata, entry.UploadID)
+		if clientEntry.Version < entry.Version {
+			toUpdate = append(toUpdate, entry)
+			continue
+		}
+		// Case 3: entry is in clientUploadMetadata and same version
+		if clientEntry.Version == entry.Version {
+			// Do nothing
+			continue
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"toAdd": toAdd, "toUpdate": toUpdate, "toDelete": toDelete})
+}
+
+func containsUploadMetadata(metadataList []UploadMetadata, metadata UploadMetadata) bool {
+	for _, m := range metadataList {
+		if m.UploadID == metadata.UploadID {
+			return true
+		}
+	}
+	return false
+}
+
+func getUploadMetadata(metadataList []UploadMetadata, uploadID uuid.UUID) UploadMetadata {
+	for _, m := range metadataList {
+		if m.UploadID == uploadID {
+			return m
+		}
+	}
+	return UploadMetadata{}
 }
